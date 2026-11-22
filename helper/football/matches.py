@@ -78,6 +78,20 @@ def score(match: dict) -> str | None:
     return f"{home}-{away}" + (" after extra time" if s.get("duration") == "EXTRA_TIME" else "")
 
 
+def record(matches: list[dict], team_id: int) -> tuple[int, int, int]:
+    """Won, drawn, lost. A shoot-out counts for whoever won it."""
+    won = drawn = lost = 0
+    for match in matches:
+        winner = (match.get("score") or {}).get("winner")
+        at_home = (match.get("homeTeam") or {}).get("id") == team_id
+        if winner == "DRAW":
+            drawn += 1
+        elif winner in ("HOME_TEAM", "AWAY_TEAM"):
+            won += (winner == "HOME_TEAM") == at_home
+            lost += (winner == "HOME_TEAM") != at_home
+    return won, drawn, lost
+
+
 def team_label(team: dict | None) -> str:
     team = team or {}
     return team.get("shortName") or team.get("name") or "to be decided"

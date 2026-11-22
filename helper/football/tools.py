@@ -1,16 +1,17 @@
 """Football tools. Each returns short text with only the fields the model needs."""
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from pydantic import Field
 
 from helper.football import matches as m
+from helper.football import seasons
 from helper.football.client import Fetched, FootballClient, FootballError, NotFound
 from helper.football.competitions import (
     COMPETITION_HELP, COMPETITIONS, LEAGUES, TOURNAMENTS, CompetitionCode, CompetitionOrAll,
 )
-from helper.football.teams import TeamIndex
+from helper.football.teams import TeamIndex, normalize
 from helper.tools.registry import Tool, ToolArgs, ToolOutput
 
 ONE_MINUTE, TEN_MINUTES, ONE_HOUR = 60, 600, 3600
@@ -20,13 +21,23 @@ UNAVAILABLE = "For a competition that is not listed, such as the Turkish Super L
 TEAM_HELP = "Team name in English as the user means it, e.g. 'Arsenal' or 'Spain'."
 
 
+SEASON = Field(default="current", max_length=20, description=seasons.SEASON_HELP)
+
+
 class StandingsArgs(ToolArgs):
     competition: CompetitionCode = Field(description=COMPETITION_HELP)
+    season: str = SEASON
 
 
 class ScorersArgs(ToolArgs):
     competition: CompetitionCode = Field(description=COMPETITION_HELP)
     limit: int = Field(default=10, ge=1, le=20, description="How many players, 1 to 20.")
+    season: str = SEASON
+
+
+class WinnerArgs(ToolArgs):
+    competition: CompetitionCode = Field(description=COMPETITION_HELP)
+    season: str = Field(default="last", max_length=20, description=seasons.SEASON_HELP)
 
 
 class MatchesArgs(ToolArgs):
@@ -50,6 +61,10 @@ class TeamMatchesArgs(ToolArgs):
         description="upcoming = next matches, recent = latest results"
     )
     limit: int = Field(default=5, ge=1, le=10, description="How many matches, 1 to 10.")
+    season: str = Field(default="current", max_length=20, description=seasons.SEASON_HELP
+                        + " With a past season, 'which' is ignored.")
+    opponent: str = Field(default="", max_length=80,
+                          description="Only matches against this team. Otherwise empty.")
 
 
 class TeamInfoArgs(ToolArgs):
@@ -93,7 +108,7 @@ def no_table(code: str) -> FootballError:
     return FootballError(f"there is no table for {COMPETITIONS[code]} right now.")
 
 
-def format_standings(code: str, fetched: Fetched) -> str:
+def format_standings(code: str, fetched: Fetched, today: date | None = None) -> str:
     data = fetched.data
     # Some competitions also return HOME and AWAY tables. We want the overall one.
     tables = [s for s in data.get("standings") or [] if s.get("type") == "TOTAL" and s.get("table")]
@@ -101,8 +116,12 @@ def format_standings(code: str, fetched: Fetched) -> str:
         raise no_table(code)
 
     season = data.get("season") or {}
-    lines = [f"{COMPETITIONS[code]}, season {season_name(season)}, "
-             f"matchday {value(season.get('currentMatchday'))}"]
+    over = today is not None and seasons.finished(season, today)
+    stage = "final table" if over else f"matchday {value(season.get('currentMatchday'))}"
+    lines = [f"{COMPETITIONS[code]}, season {season_name(season)}, {stage}"]
+    if code == "CL" and (season.get("startDate") or "9") < "2024":
+        lines.append("WARNING, tell the user: this season had groups, which the API merges into "
+                     "one list. It shows the group stage, not who won.")
     for table in tables:
         if len(tables) > 1:
             lines.append(f"\n{value(table.get('group'))}")
@@ -169,19 +188,25 @@ def football_tools(
 
     async def standings(args: StandingsArgs) -> ToolOutput:
         check_available(args.competition)
-        path = f"/competitions/{args.competition}/standings"
+        path, today = f"/competitions/{args.competition}/standings", now().date()
+        year = await seasons.resolve(client, args.competition, args.season, today)
         try:
-            fetched = await client.get(path, ttl=TEN_MINUTES)
+            fetched = await seasons.get(client, path, {}, year, TEN_MINUTES)
         except NotFound:  # seen for the World Cup and the Euros between tournaments
             raise no_table(args.competition) from None
-        return sourced(format_standings(args.competition, fetched), fetched)
+        return sourced(format_standings(args.competition, fetched, today), fetched)
 
     async def scorers(args: ScorersArgs) -> ToolOutput:
         check_available(args.competition)
         path = f"/competitions/{args.competition}/scorers"
         # Always fetch 20, so a different limit can reuse the cached answer.
-        fetched = await client.get(path, {"limit": 20}, ttl=TEN_MINUTES)
+        year = await seasons.resolve(client, args.competition, args.season, now().date())
+        fetched = await seasons.get(client, path, {"limit": 20}, year, TEN_MINUTES)
         return sourced(format_scorers(args.competition, args.limit, fetched), fetched)
+
+    async def get_winner(args: WinnerArgs) -> ToolOutput:
+        check_available(args.competition)
+        return sourced(*await seasons.winner(client, args.competition, args.season, now().date()))
 
     async def get_matches(args: MatchesArgs) -> ToolOutput:
         check_available(args.competition)
@@ -200,6 +225,9 @@ def football_tools(
     async def team_matches(args: TeamMatchesArgs) -> ToolOutput:
         team, current = find_team(args.team), now()
         today, upcoming = current.date(), args.which == "upcoming"
+        year = await seasons.resolve(client, team.competitions[0], args.season, today)
+        if year is not None:
+            return await team_season(team, year, args)
         days = m.Days(today, today + TEAM_WINDOW) if upcoming else m.Days(today - TEAM_WINDOW, today)
         # No `limit` parameter here: the API would return the LAST matches of the period.
         fetched = await client.get(f"/teams/{team.id}/matches", days.api_params(), ttl=ONE_MINUTE)
@@ -208,6 +236,7 @@ def football_tools(
                        key=m.utc_time)
         if upcoming:  # a kick-off long past that still says "not started" is stale
             found = [x for x in found if m.utc_time(x) > current - timedelta(hours=3)]
+        found = against(found, args.opponent)
         found = found[:args.limit] if upcoming else found[-args.limit:]
         lines = [f"{team.name}, {args.which} matches within {TEAM_WINDOW.days} days: {len(found)} "
                  "shown (local time, oldest first)"]
@@ -223,6 +252,28 @@ def football_tools(
                          "so other matches may exist.")
         return sourced("\n".join(lines), fetched)
 
+    def against(found: list[dict], opponent: str) -> list[dict]:
+        words = set(normalize(opponent).split())
+        if not words:
+            return found
+        return [x for x in found if any(
+            words <= set(normalize(side.get(key) or "").split())
+            for side in (x.get("homeTeam") or {}, x.get("awayTeam") or {})
+            for key in ("name", "shortName"))]
+
+    async def team_season(team, year: int, args: TeamMatchesArgs) -> ToolOutput:
+        fetched = await seasons.get(client, f"/teams/{team.id}/matches", {}, year, TEN_MINUTES)
+        found = sorted((x for x in fetched.data.get("matches") or [] if x.get("status") in m.DONE),
+                       key=m.utc_time)
+        found = against(found, args.opponent)
+        versus = f" against {args.opponent}" if args.opponent else ""
+        won, drawn, lost = m.record(found, team.id)  # the API's own counts are wrong
+        lines = [f"{team.name}, season starting {year}{versus}: {len(found)} matches, {won} won, "
+                 f"{drawn} drawn, {lost} lost. Last {min(args.limit, len(found))} shown:"]
+        lines += m.match_lines(found[-args.limit:], now())
+        lines.append("Only competitions in the free plan are counted. Other cups are not included.")
+        return sourced("\n".join(lines), fetched)
+
     async def team_info(args: TeamInfoArgs) -> ToolOutput:
         team = find_team(args.team)
         fetched = await client.get(f"/teams/{team.id}", ttl=ONE_HOUR)
@@ -230,17 +281,24 @@ def football_tools(
 
     return [
         Tool("get_standings",
-             "Get the current league table (positions, points, goals) of a football competition. "
+             "Get a league table (positions, points, goals) of a football competition, for the "
+             "current or a past season. "
              + UNAVAILABLE, StandingsArgs, standings),
         Tool("get_top_scorers",
-             "Get the players with the most goals in a football competition this season. "
+             "Get the players with the most goals in a football competition, for the current or "
+             "a past season. "
              + UNAVAILABLE, ScorersArgs, scorers),
+        Tool("get_winner",
+             "Get who won a football competition in a past season: champions, cup winners, World "
+             "Cup and Euro winners. " + UNAVAILABLE, WinnerArgs, get_winner),
         Tool("get_matches",
              "Get football matches of a day or period: results and fixtures of a competition. "
-             "For one team's matches use get_team_matches. " + UNAVAILABLE,
+             "For one team's matches use get_team_matches. Scores only: goal scorers, goal "
+             "times, line-ups and cards are not in the free plan. " + UNAVAILABLE,
              MatchesArgs, get_matches),
         Tool("get_team_matches",
-             "Get one football team's next matches or latest results.",
+             "Get one football team's next matches, latest results, or matches of a past season, "
+             "also against one opponent. Scores only, no goal scorers or goal times.",
              TeamMatchesArgs, team_matches),
         Tool("get_team_info",
              "Get a football team's coach, stadium, founding year and squad players.",

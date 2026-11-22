@@ -20,6 +20,10 @@ class NotFound(FootballError):
     """The API has nothing at this address (404)."""
 
 
+class NotAllowed(FootballError):
+    """The plan does not include this (403)."""
+
+
 @dataclass(frozen=True)
 class Fetched:
     data: dict
@@ -121,7 +125,7 @@ class FootballClient:
         if status == 400:
             raise FootballError(f"football-data.org refused the request: {message[:200]}")
         if status == 403:
-            raise FootballError("this data is not included in the free football-data.org plan.")
+            raise NotAllowed("this data is not included in the free football-data.org plan.")
         if status == 404:
             raise NotFound("football-data.org has no such data.")
         if status == 429:

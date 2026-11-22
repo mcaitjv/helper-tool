@@ -7,9 +7,11 @@ A personal helper AI on a local Qwen model (through Ollama). A learning project.
 ```
 source .venv/bin/activate
 python lessons/01_raw_chat.py "your question"   # step 1
-python -m helper.cli                            # the football agent
-python -m helper.cli general                    # the plain helper
-python -m evals.football                        # question set (needs Ollama)
+python -m helper.cli                            # the main assistant
+python -m helper.cli football                   # only the football agent
+python -m helper.cli general                    # only the plain helper
+python -m evals.football                        # football question set (needs Ollama)
+python -m evals.routing                         # router question set (needs Ollama)
 python -m helper.football.teams                 # rebuild the team list
 python -m pytest                                # tests
 ```
@@ -97,3 +99,16 @@ First time on another machine: `python3 -m venv .venv`, activate it,
 - **Known limits:** "Bundesliga 2" in Turkish is read as the first Bundesliga. Language
   detection covers only Turkish and English. Evals are not a guarantee.
 - **Note:** a sleeping Mac pauses evals; some runs looked stuck for minutes because of that.
+
+### Step 8 (first part): the main assistant (`assistant.py`)
+- **Router:** one quick model call picks an agent from a fixed list, then that agent answers.
+  The answer is not rewritten, so warnings and sources survive.
+- **Structured output:** Ollama's `format` takes a JSON schema, and the model can only reply
+  in that shape. We still check the result (`LLM.choose`).
+- **Shared history:** all agents use one list of turns, so "and who is second?" works after a
+  topic change. The router itself sees only the last two turns.
+- **Adding an API:** write the agent like `agents/football.py`, then add one `Specialist` in
+  `agents/team.py`. The router reads its `handles` text.
+- **Known limits:** one agent per message. A question needing two live-data agents will need
+  more work once there is a second API. After `/clear`, "and who is third?" makes the model
+  assume the Premier League instead of asking.

@@ -1,7 +1,8 @@
 """Terminal chat.
 
-Run:  python -m helper.cli            the football agent
-      python -m helper.cli general    the plain helper
+Run:  python -m helper.cli             the main assistant, which picks an agent
+      python -m helper.cli football    only the football agent
+      python -m helper.cli general     only the plain helper
 """
 import argparse
 import asyncio
@@ -12,6 +13,8 @@ from rich.console import Console
 from helper.agent import Agent, Sources, Text, Thinking, ToolFinished, ToolStarted
 from helper.agents.football import football_agent, football_registry
 from helper.agents.general import general_agent
+from helper.agents.team import main_assistant
+from helper.assistant import Assistant, Routed
 from helper.config import load_config
 from helper.football.client import FootballClient, FootballError
 from helper.football.teams import TeamIndex, build_index, load_index
@@ -20,7 +23,7 @@ from helper.llm import LLM, LLMError
 HELP = "/think switch thinking on or off · /clear forget this chat · /quit leave"
 
 
-async def show(agent: Agent, question: str, think: bool, out: Console) -> None:
+async def show(agent: Agent | Assistant, question: str, think: bool, out: Console) -> None:
     """Run the agent and draw its events."""
     previous = None
     async for event in agent.run(question, think):
@@ -29,6 +32,8 @@ async def show(agent: Agent, question: str, think: bool, out: Console) -> None:
             out.print()
         previous = type(event)
         match event:
+            case Routed(name):
+                out.print(f"[{name}]", style="magenta", markup=False, highlight=False)
             case Thinking(text):
                 out.print(text, end="", style="dim", markup=False, highlight=False)
             case Text(text):
@@ -64,7 +69,8 @@ def prepare_teams(client: FootballClient, runner: asyncio.Runner, out: Console) 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m helper.cli")
-    parser.add_argument("agent", nargs="?", choices=["football", "general"], default="football")
+    parser.add_argument("agent", nargs="?", choices=["main", "football", "general"],
+                        default="main")
     which = parser.parse_args().agent
 
     config = load_config()
@@ -75,12 +81,15 @@ def main() -> None:
 
     # Input stays outside the async part so Ctrl-C works at the prompt.
     with asyncio.Runner() as runner:
-        if which == "football":
+        if which == "general":
+            agent = general_agent(llm, config)
+        else:
             client = FootballClient(config.football_key)
             teams = prepare_teams(client, runner, out)
-            agent = football_agent(llm, config, football_registry(client, lambda: teams))
-        else:
-            agent = general_agent(llm, config)
+            if which == "football":
+                agent = football_agent(llm, config, football_registry(client, lambda: teams))
+            else:
+                agent = main_assistant(llm, config, client, lambda: teams)
         while True:
             try:
                 line = out.input("\n[bold cyan]you>[/] ").strip()

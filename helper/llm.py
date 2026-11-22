@@ -1,5 +1,7 @@
 """The only file that talks to Ollama."""
+import json
 from collections.abc import AsyncIterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import httpx
@@ -27,6 +29,23 @@ class Chunk:
     tool_calls: list[ToolCall] = field(default_factory=list)
 
 
+@contextmanager
+def clear_errors(config: Config):
+    """Turn technical errors into one sentence."""
+    try:
+        yield
+    except ollama.ResponseError as e:
+        if e.status_code == 404:
+            raise LLMError(f"Model '{config.model}' not found. Check: ollama list") from e
+        raise LLMError(f"Ollama returned an error: {e.error}") from e
+    except httpx.TimeoutException as e:
+        raise LLMError("The model took too long to answer.") from e
+    except (ConnectionError, httpx.HTTPError) as e:
+        raise LLMError(
+            f"Can't reach Ollama at {config.ollama_url}. Is the Ollama app running?"
+        ) from e
+
+
 class LLM:
     def __init__(self, config: Config):
         self.config = config
@@ -38,7 +57,7 @@ class LLM:
         client = ollama.AsyncClient(
             host=self.config.ollama_url, timeout=self.config.request_timeout
         )
-        try:
+        with clear_errors(self.config):
             reply = await client.chat(
                 model=self.config.model,
                 messages=messages,
@@ -63,13 +82,24 @@ class LLM:
                 )
                 if part.done_reason == "length":
                     yield Chunk(text="\n[answer cut: it was too long]")
-        except ollama.ResponseError as e:
-            if e.status_code == 404:
-                raise LLMError(f"Model '{self.config.model}' not found. Check: ollama list") from e
-            raise LLMError(f"Ollama returned an error: {e.error}") from e
-        except httpx.TimeoutException as e:
-            raise LLMError("The model took too long to answer.") from e
-        except (ConnectionError, httpx.HTTPError) as e:
-            raise LLMError(
-                f"Can't reach Ollama at {self.config.ollama_url}. Is the Ollama app running?"
-            ) from e
+
+    async def choose(self, messages: list[dict], options: list[str]) -> str:
+        """Make the model pick one option. Returns "" if it gave something unusable."""
+        client = ollama.AsyncClient(
+            host=self.config.ollama_url, timeout=self.config.request_timeout
+        )
+        schema = {
+            "type": "object",
+            "properties": {"choice": {"type": "string", "enum": options}},
+            "required": ["choice"],
+        }
+        with clear_errors(self.config):
+            reply = await client.chat(
+                model=self.config.model, messages=messages, think=False, format=schema,
+                options={"temperature": 0, "num_predict": 50},
+            )
+        try:
+            choice = json.loads(reply.message.content or "")["choice"]
+        except (ValueError, KeyError, TypeError):
+            return ""
+        return choice if choice in options else ""

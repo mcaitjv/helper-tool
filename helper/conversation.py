@@ -15,6 +15,7 @@ class Conversation:
         self.system = {"role": "system", "content": system_prompt}
         self.max_tokens = max_tokens
         # One turn = a question, any tool calls and results, and the answer.
+        # Several agents may share this list (see assistant.py).
         self.turns: list[list[dict]] = []
 
     def add_turn(self, turn: list[dict]) -> None:
