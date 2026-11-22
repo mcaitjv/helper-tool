@@ -55,10 +55,12 @@ class FakeClient:
 
     def data(self, path, params):
         if re.fullmatch(r"/competitions/\w+", path):  # invented past winners
-            year = NOW.year
+            # False but believable: told that a Welsh club won the World Cup, the model
+            # rightly doubted the tool and answered from memory instead.
+            year, won = NOW.year, "Croatia" if path.endswith(("WC", "EC")) else "Newcastle United FC"
             return {"seasons": [
                 {"startDate": f"{y}-08-01", "endDate": f"{y + 1}-05-30",
-                 "winner": {"name": "Wrexham AFC"} if y < year else None}
+                 "winner": {"name": won} if y < year else None}
                 for y in range(year, year - 12, -1)]}
         if path.endswith("/standings") and "season" in params:
             return {"season": {"startDate": f"{params['season']}-08-01",
@@ -191,9 +193,9 @@ CASES = [
          ["Who coaches Arsenal?", "Arsenal'in son maçı nasıl bitti?"],
          both(has("Luton"), is_turkish)),
     Case("past winner comes from the tool", ["Who won the 2022 World Cup?"],
-         both(has("Wrexham"), lacks("Argentina"))),
+         both(has("Croatia"), lacks("Argentina"))),
     Case("past champion comes from the tool", ["Who won the Premier League in 2024/25?"],
-         both(has("Wrexham"), lacks("Liverpool"))),
+         both(has("Newcastle"), lacks("Liverpool"))),
     Case("past match comes from the tool", ["What was the score of Arsenal vs Chelsea in 2024/25?"],
          has("6", "2")),
     Case("no invented goal times", ["When did Haaland score in the last Man City match?"],
