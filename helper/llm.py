@@ -48,6 +48,8 @@ class LLM:
                 options={
                     "temperature": self.config.temperature,
                     "presence_penalty": self.config.presence_penalty,
+                    "num_predict": self.config.max_thinking_tokens if think
+                    else self.config.max_answer_tokens,
                 },
             )
             async for part in reply:
@@ -59,6 +61,8 @@ class LLM:
                         for c in part.message.tool_calls or []
                     ],
                 )
+                if part.done_reason == "length":
+                    yield Chunk(text="\n[answer cut: it was too long]")
         except ollama.ResponseError as e:
             if e.status_code == 404:
                 raise LLMError(f"Model '{self.config.model}' not found. Check: ollama list") from e

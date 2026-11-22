@@ -1,5 +1,5 @@
 """The agent loop. Generic: any system prompt + any tools. Prints nothing."""
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 
 from helper.conversation import Conversation
@@ -30,25 +30,38 @@ class ToolFinished:
     content: str
 
 
-Event = Text | Thinking | ToolStarted | ToolFinished
+@dataclass(frozen=True)
+class Sources:
+    """Where this answer's data came from. Added by code, so it can't be forgotten."""
+    lines: tuple[str, ...]
+
+
+Event = Text | Thinking | ToolStarted | ToolFinished | Sources
 
 
 class Agent:
-    def __init__(self, llm, registry: Registry, chat: Conversation, max_rounds: int = 6):
+    def __init__(self, llm, registry: Registry, chat: Conversation, max_rounds: int = 6,
+                 reminder: Callable[[str], str] = lambda question: ""):
         self.llm = llm
         self.registry = registry
         self.chat = chat
         self.max_rounds = max_rounds
+        # Added after the newest tool results, the last thing the model reads before
+        # answering. Made from the user's question. Not kept in history.
+        self.reminder = reminder
 
     async def run(self, question: str, think: bool = False) -> AsyncIterator[Event]:
         # This turn is kept separately and saved only once it completes,
         # so an error or Ctrl-C never leaves half a turn in the history.
         turn: list[dict] = [{"role": "user", "content": question}]
         tools = self.registry.schemas()
+        sources: dict[str, None] = {}  # a dict keeps order and drops repeats
 
         for _ in range(self.max_rounds):
             text, thinking, calls = "", "", []
-            async for chunk in self.llm.stream(self.chat.messages(turn), think, tools):
+            async for chunk in self.llm.stream(
+                self.chat.messages(self._reminded(turn, question)), think, tools
+            ):
                 if chunk.thinking:
                     thinking += chunk.thinking
                     yield Thinking(chunk.thinking)
@@ -64,6 +77,8 @@ class Agent:
                     yield Text(message["content"])
                 turn.append(message)
                 self._save(turn)
+                if sources:
+                    yield Sources(tuple(sources))
                 return
 
             # The model must see its own request, then one result per call.
@@ -76,6 +91,8 @@ class Agent:
             for call in calls:
                 yield ToolStarted(call.name, call.arguments)
                 result = await self.registry.call(call.name, call.arguments)
+                if result.ok and result.source:
+                    sources[result.source] = None
                 yield ToolFinished(call.name, result.ok, result.content)
                 turn.append({"role": "tool", "tool_name": call.name, "content": result.content})
 
@@ -83,6 +100,13 @@ class Agent:
         yield Text(stopped)
         turn.append({"role": "assistant", "content": stopped})
         self._save(turn)
+
+    def _reminded(self, turn: list[dict], question: str) -> list[dict]:
+        last = turn[-1]
+        note = self.reminder(question)
+        if not note or last["role"] != "tool":
+            return turn
+        return [*turn[:-1], {**last, "content": f"{last['content']}\n\n{note}"}]
 
     def _save(self, turn: list[dict]) -> None:
         for message in turn:

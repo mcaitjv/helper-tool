@@ -1,10 +1,10 @@
 """The loop, tested with a scripted fake model: no Ollama needed."""
 import pytest
 
-from helper.agent import Agent, Text, ToolFinished, ToolStarted
+from helper.agent import Agent, Sources, Text, ToolFinished, ToolStarted
 from helper.conversation import Conversation
 from helper.llm import Chunk, LLMError, ToolCall
-from helper.tools.registry import Registry, Tool, ToolArgs, ToolError
+from helper.tools.registry import Registry, Tool, ToolArgs, ToolError, ToolOutput
 
 
 class Args(ToolArgs):
@@ -102,3 +102,25 @@ async def test_failed_turn_is_not_saved():
         await collect(agent)
     assert chat.turns == []
     assert await collect(agent, "again") == [Text("ok")]
+
+
+async def test_sources_come_last_once_and_only_when_used():
+    async def sourced(args):
+        return ToolOutput(f"{args.city}: 20C", "Source: test")
+
+    llm = FakeLLM(use("Rome", "Oslo"), say("done"), say("hi"))
+    agent = Agent(llm, Registry(Tool("weather", "w", Args, sourced)), Conversation("sys", 10_000))
+    events = await collect(agent)
+    assert events[-1] == Sources(("Source: test",))
+    assert sum(isinstance(e, Sources) for e in events) == 1
+    assert not any(isinstance(e, Sources) for e in await collect(agent))
+
+
+async def test_reminder_follows_the_newest_tool_result_only():
+    agent, llm, chat = make(use("Rome"), say("one"), say("two"), reminder=lambda q: f"lang of: {q}")
+    await collect(agent, "q1")
+    await collect(agent, "q2")
+    assert llm.seen[0][-1]["content"] == "q1"                             # no tool yet
+    assert llm.seen[1][-1]["content"] == "Rome: 20C\n\nlang of: q1"
+    assert not any("lang of" in m["content"] for m in llm.seen[2])        # not kept
+    assert chat.turns[0][2]["content"] == "Rome: 20C"

@@ -24,11 +24,18 @@ class ToolError(Exception):
 
 
 @dataclass(frozen=True)
+class ToolOutput:
+    """What a tool returns: text for the model, and a source line for the user."""
+    content: str
+    source: str = ""
+
+
+@dataclass(frozen=True)
 class Tool:
     name: str
     description: str
     args: type[ToolArgs]
-    run: Callable[[ToolArgs], Awaitable[str]]
+    run: Callable[[ToolArgs], Awaitable[str | ToolOutput]]
 
     def schema(self) -> dict:
         """The JSON the model sees."""
@@ -51,6 +58,7 @@ class Tool:
 class ToolResult:
     ok: bool
     content: str
+    source: str = ""
 
 
 class Registry:
@@ -81,13 +89,16 @@ class Registry:
             )
             return ToolResult(False, f"Error: invalid arguments. {problems}")
         try:
-            content = await tool.run(args)
+            output = await tool.run(args)
         except ToolError as e:
             return ToolResult(False, f"Error: {e}")
         except Exception:
             # Unexpected: details go to the log, not to the model.
             log.exception("tool %s failed", name)
             return ToolResult(False, "Error: the tool failed unexpectedly.")
+        if isinstance(output, str):
+            output = ToolOutput(output)
+        content = output.content
         if len(content) > MAX_RESULT_CHARS:
             content = content[:MAX_RESULT_CHARS] + "\n[result cut: too long]"
-        return ToolResult(True, content)
+        return ToolResult(True, content, output.source)

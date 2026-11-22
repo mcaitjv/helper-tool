@@ -11,15 +11,12 @@ from helper.football.competitions import (
     COMPETITION_HELP, COMPETITIONS, LEAGUES, TOURNAMENTS, CompetitionCode, CompetitionOrAll,
 )
 from helper.football.teams import TeamIndex
-from helper.tools.registry import Tool, ToolArgs
+from helper.tools.registry import Tool, ToolArgs, ToolOutput
 
 ONE_MINUTE, TEN_MINUTES, ONE_HOUR = 60, 600, 3600
 TEAM_WINDOW = timedelta(days=120)  # how far a team's matches are searched
 
-UNAVAILABLE = (
-    "Only the listed competitions exist here. For any other league, such as the Turkish Super "
-    "Lig, do not call this tool with a different competition: tell the user it is not available."
-)
+UNAVAILABLE = "For a competition that is not listed, such as the Turkish Super Lig, use OTHER."
 TEAM_HELP = "Team name in English as the user means it, e.g. 'Arsenal' or 'Spain'."
 
 
@@ -80,6 +77,18 @@ def footer(fetched: Fetched) -> str:
             "Results can be delayed.")
 
 
+def check_available(code: str) -> None:
+    if code == "OTHER":
+        raise FootballError(
+            "that competition is not available in the free football data. Tell the user so, "
+            "and do not use another competition instead."
+        )
+
+
+def sourced(text: str, fetched: Fetched) -> ToolOutput:
+    return ToolOutput(f"{text}\n{footer(fetched)}", footer(fetched))
+
+
 def no_table(code: str) -> FootballError:
     return FootballError(f"there is no table for {COMPETITIONS[code]} right now.")
 
@@ -104,7 +113,6 @@ def format_standings(code: str, fetched: Fetched) -> str:
             cells += [row.get(k) for k in ("playedGames", "won", "draw", "lost", "goalsFor",
                                            "goalsAgainst", "goalDifference", "points")]
             lines.append(" | ".join(value(c) for c in cells))
-    lines.append(footer(fetched))
     return "\n".join(lines)
 
 
@@ -119,7 +127,6 @@ def format_scorers(code: str, limit: int, fetched: Fetched) -> str:
         cells = [rank, player, team_name(row.get("team"))]
         cells += [row.get(k) for k in ("goals", "assists", "penalties", "playedMatches")]
         lines.append(" | ".join(value(c) for c in cells))
-    lines.append(footer(fetched))
     return "\n".join(lines)
 
 
@@ -135,7 +142,6 @@ def format_team(fetched: Fetched) -> str:
     squad = [f"{value(p.get('name'))} ({value(p.get('position'))}, {value(p.get('nationality'))})"
              for p in data.get("squad") or []]
     lines.append(f"Squad ({len(squad)}): {'; '.join(squad) or 'n/a'}")
-    lines.append(footer(fetched))
     return "\n".join(lines)
 
 
@@ -161,21 +167,24 @@ def football_tools(
             )
         return team
 
-    async def standings(args: StandingsArgs) -> str:
+    async def standings(args: StandingsArgs) -> ToolOutput:
+        check_available(args.competition)
         path = f"/competitions/{args.competition}/standings"
         try:
             fetched = await client.get(path, ttl=TEN_MINUTES)
         except NotFound:  # seen for the World Cup and the Euros between tournaments
             raise no_table(args.competition) from None
-        return format_standings(args.competition, fetched)
+        return sourced(format_standings(args.competition, fetched), fetched)
 
-    async def scorers(args: ScorersArgs) -> str:
+    async def scorers(args: ScorersArgs) -> ToolOutput:
+        check_available(args.competition)
         path = f"/competitions/{args.competition}/scorers"
         # Always fetch 20, so a different limit can reuse the cached answer.
         fetched = await client.get(path, {"limit": 20}, ttl=TEN_MINUTES)
-        return format_scorers(args.competition, args.limit, fetched)
+        return sourced(format_scorers(args.competition, args.limit, fetched), fetched)
 
-    async def get_matches(args: MatchesArgs) -> str:
+    async def get_matches(args: MatchesArgs) -> ToolOutput:
+        check_available(args.competition)
         everything = args.competition == "ALL"
         # /matches allows 10 days. api_params adds up to 2, so 8 is safe.
         days = m.resolve_days(args.when, args.date_from, args.date_to, now().date(),
@@ -186,9 +195,9 @@ def football_tools(
                  if days.first <= m.local_day(x) <= days.last]
         where = "All available competitions" if everything else COMPETITIONS[args.competition]
         lines = [f"{where}, {days}: {len(found)} matches (local time)"]
-        return "\n".join([*lines, *m.match_lines(found, now()), footer(fetched)])
+        return sourced("\n".join([*lines, *m.match_lines(found, now())]), fetched)
 
-    async def team_matches(args: TeamMatchesArgs) -> str:
+    async def team_matches(args: TeamMatchesArgs) -> ToolOutput:
         team, current = find_team(args.team), now()
         today, upcoming = current.date(), args.which == "upcoming"
         days = m.Days(today, today + TEAM_WINDOW) if upcoming else m.Days(today - TEAM_WINDOW, today)
@@ -212,11 +221,12 @@ def football_tools(
         else:
             lines.append(f"Covers {covered} only. Other cups are not included, "
                          "so other matches may exist.")
-        return "\n".join([*lines, footer(fetched)])
+        return sourced("\n".join(lines), fetched)
 
-    async def team_info(args: TeamInfoArgs) -> str:
+    async def team_info(args: TeamInfoArgs) -> ToolOutput:
         team = find_team(args.team)
-        return format_team(await client.get(f"/teams/{team.id}", ttl=ONE_HOUR))
+        fetched = await client.get(f"/teams/{team.id}", ttl=ONE_HOUR)
+        return sourced(format_team(fetched), fetched)
 
     return [
         Tool("get_standings",

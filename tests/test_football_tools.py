@@ -35,14 +35,13 @@ def row(pos, name, **extra):
 
 
 def test_code_list_matches_the_names():
-    assert set(get_args(CompetitionCode)) == set(COMPETITIONS)
+    assert set(get_args(CompetitionCode)) == {*COMPETITIONS, "OTHER"}
 
 
 def test_league_table():
     text = format_standings("PD", Fetched(load("PD"), AT))
     assert "La Liga (Spain), season 2026/2027, matchday 13" in text
     assert "1 | Barça | 12 | 11 | 0 | 1 | 48 | 13 | 35 | 33" in text
-    assert "fetched 22 November 2026 15:50" in text
 
 
 def test_champions_league_has_one_table():
@@ -77,9 +76,19 @@ async def test_tool_calls_the_right_path():
     client = FakeClient(load("PD"))
     result = await Registry(*football_tools(client)).call("get_standings", {"competition": "PD"})
     assert result.ok and client.calls == [("/competitions/PD/standings", None)]
+    # The model and the user both get the source and the fetch time.
+    assert "fetched 22 November 2026 15:50" in result.source
+    assert result.content.endswith(result.source)
 
 
-async def test_super_lig_is_rejected_before_any_request():
+@pytest.mark.parametrize("tool", ["get_standings", "get_top_scorers", "get_matches"])
+async def test_other_competitions_are_explained_without_a_request(tool):
+    client = FakeClient()
+    result = await Registry(*football_tools(client)).call(tool, {"competition": "OTHER"})
+    assert not result.ok and "not available" in result.content and client.calls == []
+
+
+async def test_made_up_code_is_rejected_before_any_request():
     client = FakeClient()
     result = await Registry(*football_tools(client)).call("get_standings", {"competition": "TSL"})
     assert not result.ok and client.calls == []

@@ -6,7 +6,7 @@ COMPETITIONS = {
     "ELC": "Championship (England, second tier)",
     "PD": "La Liga (Spain)",
     "SA": "Serie A (Italy)",
-    "BL1": "Bundesliga (Germany)",
+    "BL1": "Bundesliga (Germany, first tier)",
     "FL1": "Ligue 1 (France)",
     "DED": "Eredivisie (Netherlands)",
     "PPL": "Primeira Liga (Portugal)",
@@ -16,16 +16,18 @@ COMPETITIONS = {
     "WC": "FIFA World Cup",
 }
 
-# The model can only pick one of these codes.
+# The model must pick from a fixed list. Without OTHER it sometimes picked a wrong
+# competition for a league we don't have; OTHER is an honest way out.
 CompetitionCode = Literal[
-    "PL", "ELC", "PD", "SA", "BL1", "FL1", "DED", "PPL", "BSA", "CL", "EC", "WC"
+    "PL", "ELC", "PD", "SA", "BL1", "FL1", "DED", "PPL", "BSA", "CL", "EC", "WC", "OTHER"
 ]
 
 CompetitionOrAll = Literal[
-    "ALL", "PL", "ELC", "PD", "SA", "BL1", "FL1", "DED", "PPL", "BSA", "CL", "EC", "WC"
+    "ALL", "PL", "ELC", "PD", "SA", "BL1", "FL1", "DED", "PPL", "BSA", "CL", "EC", "WC", "OTHER"
 ]
 
 COMPETITION_HELP = "Competition code: " + ", ".join(f"{c}={n}" for c, n in COMPETITIONS.items())
+COMPETITION_HELP += ", OTHER=any league or cup not in this list"
 
 # Teams in one of these have their league matches covered.
 LEAGUES = {"PL", "ELC", "PD", "SA", "BL1", "FL1", "DED", "PPL", "BSA"}

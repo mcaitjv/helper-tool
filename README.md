@@ -7,7 +7,9 @@ A personal helper AI on a local Qwen model (through Ollama). A learning project.
 ```
 source .venv/bin/activate
 python lessons/01_raw_chat.py "your question"   # step 1
-python -m helper.cli                            # the chat
+python -m helper.cli                            # the football agent
+python -m helper.cli general                    # the plain helper
+python -m evals.football                        # question set (needs Ollama)
 python -m helper.football.teams                 # rebuild the team list
 python -m pytest                                # tests
 ```
@@ -77,3 +79,21 @@ First time on another machine: `python3 -m venv .venv`, activate it,
   - National team pages are not in the free plan (403).
 - **Right data can still mislead:** Galatasaray's Champions League match is not necessarily
   its next match, because its league isn't covered. The tool result now says so.
+
+### Step 7: the football agent (`agents/football.py`)
+- **An agent = prompt + tools + the generic loop.** The loop did not change per agent.
+- **Unit tests vs evals:** unit tests check our code and always give the same result.
+  Evals ask the real model, so each question is repeated. The football data in evals is
+  invented, so a correct answer proves the model read the tool, not its memory.
+- **Held-out questions** are never used for tuning, to see if a fix really generalizes.
+- **More rules made it worse.** A strict ten-rule prompt dropped tool choice from 54/54 to
+  39/54 and the model invented facts. A short "call the tool first" prompt fixed it.
+- **Fix the tool before adding prompt text:**
+  - A league we don't have made the model pick a wrong one. An `OTHER` choice fixed most cases.
+  - It drifted to the wrong language. "Same language as the question" failed twice; code that
+    detects the language and says "Answer the user in English." passed 20 of 20.
+- **Must-haves belong in code:** the source and fetch time are added by code, not the model.
+- **Reply length is capped**, since a timeout never fires while text keeps coming.
+- **Known limits:** "Bundesliga 2" in Turkish is read as the first Bundesliga. Language
+  detection covers only Turkish and English. Evals are not a guarantee.
+- **Note:** a sleeping Mac pauses evals; some runs looked stuck for minutes because of that.

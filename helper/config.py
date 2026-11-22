@@ -23,6 +23,9 @@ class Config:
     # num_ctx, so we trim the history ourselves and leave room for the answer.
     max_history_tokens: int = 24_000
     request_timeout: float = 120.0
+    # Hard stop for runaway replies: a timeout never fires while text keeps coming.
+    max_answer_tokens: int = 1_500
+    max_thinking_tokens: int = 4_000  # limit when thinking is on (thinking + answer)
 
 
 def load_config() -> Config:
