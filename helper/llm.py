@@ -1,6 +1,6 @@
 """The only file that talks to Ollama."""
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 import ollama
@@ -13,17 +13,27 @@ class LLMError(Exception):
 
 
 @dataclass
+class ToolCall:
+    """The model asking us to run something."""
+    name: str
+    arguments: dict
+
+
+@dataclass
 class Chunk:
     """A small piece of a streamed reply."""
     text: str = ""
     thinking: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)
 
 
 class LLM:
     def __init__(self, config: Config):
         self.config = config
 
-    async def stream(self, messages: list[dict], think: bool = False) -> AsyncIterator[Chunk]:
+    async def stream(
+        self, messages: list[dict], think: bool = False, tools: list[dict] | None = None
+    ) -> AsyncIterator[Chunk]:
         # A new client per call, because each CLI turn is a separate async run.
         client = ollama.AsyncClient(
             host=self.config.ollama_url, timeout=self.config.request_timeout
@@ -32,6 +42,7 @@ class LLM:
             reply = await client.chat(
                 model=self.config.model,
                 messages=messages,
+                tools=tools or None,
                 think=think,
                 stream=True,
                 options={
@@ -40,8 +51,14 @@ class LLM:
                 },
             )
             async for part in reply:
-                yield Chunk(text=part.message.content or "",
-                            thinking=part.message.thinking or "")
+                yield Chunk(
+                    text=part.message.content or "",
+                    thinking=part.message.thinking or "",
+                    tool_calls=[
+                        ToolCall(c.function.name, dict(c.function.arguments))
+                        for c in part.message.tool_calls or []
+                    ],
+                )
         except ollama.ResponseError as e:
             if e.status_code == 404:
                 raise LLMError(f"Model '{self.config.model}' not found. Check: ollama list") from e

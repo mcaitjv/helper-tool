@@ -16,7 +16,7 @@ request = {
     "messages": [
         # "system" = instructions from us, "user" = the human.
         # The model's replies come back with the role "assistant".
-        {"role": "system", "content": "You are a brief, friendly helper."},
+        {"role": "system", "content": "You are a brief, friendly helper. Use only api for football related questions."},
         {"role": "user", "content": question},
     ],
     "stream": False,  # wait for the whole answer
