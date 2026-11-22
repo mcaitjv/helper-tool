@@ -1,0 +1,66 @@
+{
+ "filters": {
+  "season": "2026"
+ },
+ "competition": {
+  "id": 2014,
+  "name": "Primera Division",
+  "code": "PD",
+  "type": "LEAGUE",
+  "emblem": "https://crests.football-data.org/laliga.png"
+ },
+ "season": {
+  "id": 2518,
+  "startDate": "2026-08-16",
+  "endDate": "2027-05-30",
+  "currentMatchday": 13,
+  "winner": null
+ },
+ "standings": [
+  {
+   "stage": "REGULAR_SEASON",
+   "type": "TOTAL",
+   "group": "Matchday",
+   "table": [
+    {
+     "position": 1,
+     "team": {
+      "id": 81,
+      "name": "FC Barcelona",
+      "shortName": "Barça",
+      "tla": "FCB",
+      "crest": "https://crests.football-data.org/81.png"
+     },
+     "playedGames": 12,
+     "form": null,
+     "won": 11,
+     "draw": 0,
+     "lost": 1,
+     "points": 33,
+     "goalsFor": 48,
+     "goalsAgainst": 13,
+     "goalDifference": 35
+    },
+    {
+     "position": 2,
+     "team": {
+      "id": 86,
+      "name": "Real Madrid CF",
+      "shortName": "Real Madrid",
+      "tla": "RMA",
+      "crest": "https://crests.football-data.org/86.png"
+     },
+     "playedGames": 13,
+     "form": null,
+     "won": 11,
+     "draw": 0,
+     "lost": 2,
+     "points": 33,
+     "goalsFor": 33,
+     "goalsAgainst": 11,
+     "goalDifference": 22
+    }
+   ]
+  }
+ ]
+}

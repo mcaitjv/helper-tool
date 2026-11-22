@@ -7,6 +7,9 @@ from rich.console import Console
 from helper.agent import Agent, Text, Thinking, ToolFinished, ToolStarted
 from helper.config import load_config
 from helper.conversation import Conversation
+from helper.football.client import FootballClient, FootballError
+from helper.football.teams import TeamIndex, build_index, load_index
+from helper.football.tools import football_tools
 from helper.llm import LLM, LLMError
 from helper.tools.clock import get_current_time
 from helper.tools.registry import Registry
@@ -49,16 +52,34 @@ async def show(agent: Agent, question: str, think: bool, out: Console) -> None:
     out.print()
 
 
+def prepare_teams(client: FootballClient, runner: asyncio.Runner, out: Console) -> TeamIndex | None:
+    """Load the team list, rebuilding it when missing or a week old."""
+    index = load_index()
+    if index and not index.is_old(datetime.now().astimezone()):
+        return index
+    out.print("[dim]Updating the team list, about a minute (Ctrl-C to skip)[/]")
+    try:
+        return runner.run(build_index(client, report=lambda s: out.print(f"[dim]  {s}[/]")))
+    except FootballError as e:
+        out.print(str(e), style="red", markup=False)
+    except KeyboardInterrupt:
+        out.print("[dim]skipped[/]")
+    return index  # an old list is better than none
+
+
 def main() -> None:
     config = load_config()
     out = Console()
     chat = Conversation(system_prompt(), config.max_history_tokens)
-    agent = Agent(LLM(config), Registry(get_current_time), chat)
+    football = FootballClient(config.football_key)
     think = False
     out.print(f"[bold]Helper[/] · {config.model}\n[dim]{HELP}[/]")
 
     # Input stays outside the async part so Ctrl-C works at the prompt.
     with asyncio.Runner() as runner:
+        teams = prepare_teams(football, runner, out)
+        tools = Registry(get_current_time, *football_tools(football, lambda: teams))
+        agent = Agent(LLM(config), tools, chat)
         while True:
             try:
                 line = out.input("\n[bold cyan]you>[/] ").strip()

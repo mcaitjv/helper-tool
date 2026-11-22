@@ -1,0 +1,66 @@
+{
+ "filters": {
+  "season": "2026"
+ },
+ "competition": {
+  "id": 2001,
+  "name": "UEFA Champions League",
+  "code": "CL",
+  "type": "CUP",
+  "emblem": "https://crests.football-data.org/CL.png"
+ },
+ "season": {
+  "id": 2557,
+  "startDate": "2026-09-08",
+  "endDate": "2027-01-27",
+  "currentMatchday": 5,
+  "winner": null
+ },
+ "standings": [
+  {
+   "stage": "LEAGUE_STAGE",
+   "type": "TOTAL",
+   "group": "League phase",
+   "table": [
+    {
+     "position": 1,
+     "team": {
+      "id": 524,
+      "name": "Paris Saint-Germain FC",
+      "shortName": "PSG",
+      "tla": "PSG",
+      "crest": "https://crests.football-data.org/524.png"
+     },
+     "playedGames": 4,
+     "form": null,
+     "won": 4,
+     "draw": 0,
+     "lost": 0,
+     "points": 12,
+     "goalsFor": 20,
+     "goalsAgainst": 5,
+     "goalDifference": 15
+    },
+    {
+     "position": 2,
+     "team": {
+      "id": 86,
+      "name": "Real Madrid CF",
+      "shortName": "Real Madrid",
+      "tla": "RMA",
+      "crest": "https://crests.football-data.org/86.png"
+     },
+     "playedGames": 4,
+     "form": null,
+     "won": 4,
+     "draw": 0,
+     "lost": 0,
+     "points": 12,
+     "goalsFor": 13,
+     "goalsAgainst": 7,
+     "goalDifference": 6
+    }
+   ]
+  }
+ ]
+}
