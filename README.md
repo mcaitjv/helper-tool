@@ -149,3 +149,13 @@ First time on another machine: `python3 -m venv .venv`, activate it,
 - **Adapting a server's output:** the time server's `convert_time` takes no date and always
   answers with today's, so "the match tomorrow at 23:00" came back dated today. Telling the
   model failed 3/3; `tools/time_adapter.py` rewrites the result ("on the next day", no dates).
+
+### Step 11: weather agent from a third-party MCP server
+
+- **Review before running.** `npx -y pkg@latest` runs whatever was published last, with your permissions. We picked a version over two weeks old (1.35.7), downloaded it with `npm pack` without running it, and read what matters: which hosts it calls (Open-Meteo, Nominatim, national weather services; no keys needed), what it writes (`~/.weather-mcp/` only for saved locations), and analytics (off by default, no default address).
+- **Pinned local install:** `mcp_servers/weather/package.json` + `package-lock.json`, installed with `npm install --ignore-scripts` (`cd mcp_servers/weather && npm ci --ignore-scripts` on a new machine). `node_modules/` is not committed.
+- **Own folder (`cwd`).** The server loads a `.env` from the folder it starts in; our project folder holds the football key, so `load_config` refuses to run a server there.
+- **Fewer tools, fewer options.** `ENABLED_TOOLS` keeps 4 of 17 tools. `weather_adapter.py` hides 14-21 options per tool down to `city_name` (+ `days`/`granularity`) and always sends `units=metric`, `24h`. Schemas went from ~3,500 to ~1,000 characters.
+- **Where an instruction goes matters again.** "Celsius only" in the prompt didn't stop "4°C (39°F)"; a note at the end of the tool result did (as with `get_winner` in step 9).
+- **Language note without tools.** The reminder now also goes on the question when no tool is called, so "English after Turkish" works for the general agent too.
+- Check: `python -m evals.weather` (live: right tool, right city, Celsius, every temperature must appear in the tool result).

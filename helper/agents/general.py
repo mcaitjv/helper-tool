@@ -2,6 +2,7 @@
 from datetime import datetime
 
 from helper.agent import Agent
+from helper.agents.football import language_reminder
 from helper.config import Config
 from helper.conversation import Conversation
 from helper.tools.clock import get_current_time
@@ -27,4 +28,5 @@ def general_agent(llm, config: Config, time_tools: list | None = None) -> Agent:
     """time_tools: e.g. the MCP time server's tools. Without them, our own clock."""
     prompt = general_prompt(datetime.now().astimezone())
     tools = Registry(*(time_tools or [get_current_time]))
-    return Agent(llm, tools, Conversation(prompt, config.max_history_tokens))
+    return Agent(llm, tools, Conversation(prompt, config.max_history_tokens),
+                 reminder=language_reminder)

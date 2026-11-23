@@ -12,3 +12,6 @@ __pycache__/
 # local data
 data/
 .DS_Store
+
+# MCP servers installed with npm (package-lock.json is kept)
+node_modules/

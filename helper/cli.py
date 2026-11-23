@@ -2,6 +2,7 @@
 
 Run:  python -m helper.cli             the main assistant, which picks an agent
       python -m helper.cli football    only the football agent
+      python -m helper.cli weather     only the weather agent
       python -m helper.cli general     only the plain helper
 """
 import argparse
@@ -14,6 +15,7 @@ from helper.agent import Agent, Sources, Text, Thinking, ToolFinished, ToolStart
 from helper.agents.football import football_agent, football_registry
 from helper.agents.general import general_agent
 from helper.agents.team import main_assistant
+from helper.agents.weather import weather_agent
 from helper.assistant import Assistant, Routed
 from helper.config import load_config
 from helper.football.client import FootballClient, FootballError
@@ -21,6 +23,7 @@ from helper.football.teams import TeamIndex, build_index, load_index
 from helper.llm import LLM, LLMError
 from helper.mcp_client import McpServers
 from helper.tools.time_adapter import adapt_time_tools
+from helper.tools.weather_adapter import shape_weather_tools
 from helper.mcp_client import load_config as load_mcp_config
 
 HELP = ("/think switch thinking on or off · /tools list tools · /clear forget this chat · "
@@ -80,7 +83,7 @@ def start_mcp(runner: asyncio.Runner, out: Console) -> McpServers:
         return McpServers([])
     runner.run(servers.start())
     for problem in servers.problems:
-        out.print(f"{problem} (using the built-in clock instead)", style="red", markup=False)
+        out.print(problem, style="red", markup=False)
     for server in servers.servers:
         names = [t.name for t in servers.tools if t.server is server]
         if names:
@@ -100,7 +103,7 @@ def list_tools(agent, out: Console) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m helper.cli")
-    parser.add_argument("agent", nargs="?", choices=["main", "football", "general"],
+    parser.add_argument("agent", nargs="?", choices=["main", "football", "weather", "general"],
                         default="main")
     which = parser.parse_args().agent
 
@@ -115,15 +118,23 @@ def main() -> None:
         mcp = start_mcp(runner, out)
         time_tools = adapt_time_tools([t for t in mcp.tools if t.server.config.name == "time"])
         time_tools = time_tools or None
+        weather_tools = shape_weather_tools(
+            [t for t in mcp.tools if t.server.config.name == "weather"]) or None
         if which == "general":
             agent = general_agent(llm, config, time_tools)
+        elif which == "weather":
+            if not weather_tools:
+                out.print("The weather server is not available.", style="red")
+                return
+            agent = weather_agent(llm, config, weather_tools)
         else:
             client = FootballClient(config.football_key)
             teams = prepare_teams(client, runner, out)
             if which == "football":
                 agent = football_agent(llm, config, football_registry(client, lambda: teams))
             else:
-                agent = main_assistant(llm, config, client, lambda: teams, time_tools)
+                agent = main_assistant(llm, config, client, lambda: teams, time_tools,
+                                       weather_tools)
         while True:
             try:
                 line = out.input("\n[bold cyan]you>[/] ").strip()

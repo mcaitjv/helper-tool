@@ -3,6 +3,14 @@
     "time": {
       "command": ".venv/bin/mcp-server-time",
       "args": []
+    },
+    "weather": {
+      "command": "mcp_servers/weather/node_modules/.bin/weather-mcp",
+      "cwd": "mcp_servers/weather",
+      "env": {
+        "ENABLED_TOOLS": "summary,forecast,current,alerts",
+        "ANALYTICS_ENABLED": "false"
+      }
     }
   }
 }

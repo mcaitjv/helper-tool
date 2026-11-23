@@ -65,6 +65,40 @@ async def test_adapter_rewrites_the_result():
     assert (await Registry(adapted).call("convert_time", {"time": "1"})).content == "RAW"
 
 
+WIDE = {"type": "object", "required": [], "properties": {
+    "city_name": {"type": "string"}, "days": {"type": "number", "minimum": 1, "maximum": 16},
+    "units": {"type": "string", "enum": ["imperial", "metric"]}, "latitude": {"type": "number"}}}
+
+
+def shaped(server):
+    return McpTool(server, "get_forecast", "Forecast", WIDE, keep=("city_name", "days"),
+                   require=("city_name",), fixed=(("units", "metric"),), source_line="Source: w")
+
+
+def test_shaped_schema_shows_only_what_is_kept():
+    params = shaped(FakeServer()).schema()["function"]["parameters"]
+    assert set(params["properties"]) == {"city_name", "days"}
+    assert params["required"] == ["city_name"]
+
+
+async def test_shaped_call_adds_fixed_values_and_a_source():
+    server = FakeServer(reply="ok")
+    result = await Registry(shaped(server)).call("get_forecast", {"city_name": "Rome", "days": 2})
+    assert server.calls == [("get_forecast", {"city_name": "Rome", "days": 2, "units": "metric"})]
+    assert result.ok and result.source == "Source: w"
+
+
+@pytest.mark.parametrize("arguments, word", [
+    ({"days": 2}, "missing: city_name"), ({"city_name": "", "days": 2}, "missing"),
+    ({"city_name": "Rome", "units": "imperial"}, "unknown arguments: units"),
+    ({"city_name": "Rome", "latitude": 1}, "unknown"), ({"city_name": "Rome", "days": 40}, "days"),
+])
+async def test_shaped_call_rejects(arguments, word):
+    server = FakeServer(reply="ok")
+    result = await Registry(shaped(server)).call("get_forecast", arguments)
+    assert not result.ok and word in result.content and server.calls == []
+
+
 async def test_server_errors_become_results():
     from helper.tools.registry import ToolError
     result = await Registry(tool(FakeServer(error=ToolError("bad time")))).call(
@@ -87,6 +121,18 @@ def test_config(tmp_path):
     assert other.command == "uvx" and other.env == (("A", "b"),)
 
 
+def test_server_folder(tmp_path):
+    path = write(tmp_path, {"mcpServers": {"w": {"command": "x", "cwd": "mcp_servers/w"}}})
+    assert load_config(path)[0].cwd.endswith("helper-tool/mcp_servers/w")
+
+
+@pytest.mark.parametrize("cwd", [".", "", "mcp_servers/.."])
+def test_server_may_not_run_in_the_project_folder(tmp_path, cwd):
+    path = write(tmp_path, {"mcpServers": {"w": {"command": "x", "cwd": cwd}}})
+    with pytest.raises(ValueError, match="project folder"):
+        load_config(path)
+
+
 def test_no_config_file_means_no_servers(tmp_path):
     assert load_config(tmp_path / "missing.json") == []
 
@@ -103,6 +149,12 @@ async def test_missing_program_is_reported_not_fatal():
     await servers.start()
     assert servers.tools == [] and "ghost" in servers.problems[0]
     await servers.stop()
+
+
+async def test_real_servers_start_in_their_own_folder():
+    """Every server in mcp.json either has its own folder or reads no .env."""
+    for config in load_config():
+        assert config.cwd is None or "mcp_servers" in config.cwd
 
 
 async def test_real_time_server():

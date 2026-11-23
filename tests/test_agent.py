@@ -120,7 +120,7 @@ async def test_reminder_follows_the_newest_tool_result_only():
     agent, llm, chat = make(use("Rome"), say("one"), say("two"), reminder=lambda q: f"lang of: {q}")
     await collect(agent, "q1")
     await collect(agent, "q2")
-    assert llm.seen[0][-1]["content"] == "q1"                             # no tool yet
+    assert llm.seen[0][-1]["content"] == "q1\n\nlang of: q1"               # on the question
     assert llm.seen[1][-1]["content"] == "Rome: 20C\n\nlang of: q1"
-    assert not any("lang of" in m["content"] for m in llm.seen[2])        # not kept
+    assert not any("lang of: q1" in m["content"] for m in llm.seen[2])    # not kept
     assert chat.turns[0][2]["content"] == "Rome: 20C"

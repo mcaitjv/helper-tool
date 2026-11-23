@@ -1,0 +1,8 @@
+{
+  "name": "helper-weather-server",
+  "private": true,
+  "description": "Pinned install of the weather MCP server for the helper. Reviewed 23 Nov 2026.",
+  "dependencies": {
+    "@dangahagan/weather-mcp": "1.35.7"
+  }
+}

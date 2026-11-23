@@ -20,7 +20,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from helper.config import ROOT
-from helper.tools.registry import InvalidArguments, ToolError
+from helper.tools.registry import InvalidArguments, ToolError, ToolOutput
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +36,9 @@ class ServerConfig:
     command: str
     args: tuple[str, ...] = ()
     env: tuple[tuple[str, str], ...] = ()
+    # The folder the server runs in. Some servers read a .env file from there, so it
+    # must not be our project folder, which holds our API key.
+    cwd: str | None = None
 
 
 def load_config(path: Path = CONFIG_FILE) -> list[ServerConfig]:
@@ -53,7 +56,12 @@ def load_config(path: Path = CONFIG_FILE) -> list[ServerConfig]:
                 command = str(ROOT / command)  # relative to the project
             args = tuple(str(a) for a in entry.get("args", []))
             env = tuple((str(k), str(v)) for k, v in entry.get("env", {}).items())
-            configs.append(ServerConfig(name, command, args, env))
+            cwd = entry.get("cwd")
+            if cwd is not None:
+                cwd = str(ROOT / cwd) if not Path(cwd).is_absolute() else str(cwd)
+                if Path(cwd).resolve() == ROOT.resolve():
+                    raise ValueError(f"'{name}' must not run in the project folder (our .env is there)")
+            configs.append(ServerConfig(name, command, args, env, cwd))
         return configs
     except (ValueError, KeyError, TypeError, AttributeError) as e:
         raise ValueError(f"mcp.json is not valid: {e}") from None
@@ -95,6 +103,7 @@ class McpServer:
             # Only what mcp.json gives. The library adds just HOME, PATH and a few
             # others, so our API key is not passed on.
             env=dict(self.config.env) or None,
+            cwd=self.config.cwd,
         )
         LOG_DIR.mkdir(exist_ok=True)
         with open(LOG_DIR / f"mcp-{self.config.name}.log", "a") as errlog:
@@ -138,6 +147,12 @@ class McpTool:
     description: str
     input_schema: dict
     adapt: Callable[[str], str] | None = None  # optional rewrite of the result text
+    # Optional shaping for a small model: show only some options, require some, and
+    # always send fixed values (e.g. metric units) that the model never sees.
+    keep: tuple[str, ...] | None = None
+    require: tuple[str, ...] = ()
+    fixed: tuple[tuple[str, object], ...] = ()
+    source_line: str = ""  # shown to the user under answers that used this tool
 
     @property
     def source(self) -> str:
@@ -149,20 +164,39 @@ class McpTool:
         parameters["properties"] = {
             k: {kk: vv for kk, vv in v.items() if kk != "title"}
             for k, v in parameters.get("properties", {}).items()
+            if self.keep is None or k in self.keep
         }
+        if self.keep is not None:
+            fixed = dict(self.fixed)
+            parameters["required"] = [k for k in parameters.get("required", [])
+                                      if k in self.keep and k not in fixed]
+        for name in self.require:
+            if name not in parameters.setdefault("required", []):
+                parameters["required"].append(name)
         return {"type": "function",
                 "function": {"name": self.name, "description": self.description,
                              "parameters": parameters}}
 
-    async def invoke(self, arguments: dict) -> str:
+    async def invoke(self, arguments: dict):
         # Check before sending, like our own tools: the model may send wrong arguments.
+        if self.keep is not None:
+            unknown = sorted(set(arguments) - set(self.keep))
+            if unknown:
+                raise InvalidArguments(f"unknown arguments: {', '.join(unknown)}")
+        missing = [name for name in self.require if not arguments.get(name)]
+        if missing:
+            raise InvalidArguments(f"missing: {', '.join(missing)}")
+        arguments = {**arguments, **dict(self.fixed)}
         problems = sorted(jsonschema.Draft202012Validator(self.input_schema).iter_errors(arguments),
                           key=str)
         if problems:
             where = lambda e: ".".join(map(str, e.absolute_path)) or "arguments"
             raise InvalidArguments("; ".join(f"{where(e)}: {e.message}" for e in problems))
         text = await self.server.call(self.name, arguments)
-        return self.adapt(text) if self.adapt else text
+        text = self.adapt(text) if self.adapt else text
+        if self.source_line:
+            return ToolOutput(text, self.source_line)
+        return text
 
 
 class McpServers:

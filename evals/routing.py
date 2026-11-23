@@ -7,13 +7,10 @@ import re
 import sys
 
 from evals.football import INDEX, FakeClient
-from helper.agent import Agent, Text
+from helper.agent import Text
 from helper.agents.team import main_assistant
-from helper.assistant import Specialist
 from helper.config import load_config
-from helper.conversation import Conversation
 from helper.llm import LLM
-from helper.tools.registry import Registry
 
 # (earlier turns, message, expected agent)
 FB = [("Who leads the Premier League?", "Burnley leads with 27 points.")]
@@ -31,7 +28,9 @@ TUNING = [
     ([], "What time is it in Tokyo?", "general"),
     ([], "Write a short poem about the sea", "general"),
     ([], "What is 17 * 23?", "general"),
-    ([], "What's the weather in Istanbul?", "general"),
+    ([], "What's the weather in Istanbul?", "weather"),
+    ([], "Yarın Ankara'da yağmur yağacak mı?", "weather"),
+    ([], "Do I need a coat in London today?", "weather"),
     ([], "Who won the NBA finals?", "general"),
     (FB, "and who is second?", "football"),
     (FB, "peki ikinci kim?", "football"),
@@ -60,11 +59,14 @@ HELD_OUT = [
     (FB, "now explain recursion", "general"),
     (TIME, "Is Real Madrid playing tonight?", "football"),
     (TIME, "and what's the date there?", "general"),
+    ([], "Is it windy in Izmir right now?", "weather"),
+    ([("Will it rain in Paris?", "No, it stays dry.")], "and tomorrow?", "weather"),
+    ([("Will it rain in Paris?", "No, it stays dry.")], "When does PSG play?", "football"),
+    (FB, "Will it rain at the stadium tomorrow in London?", "weather"),
     ([], "Convert 10 miles to km, and who is top scorer in La Liga?", "football"),
     ([], "Tell me a joke and what day it is", "general"),
 ]
-# A pretend third agent, to see whether adding an API later will work.
-THIRD = [
+THIRD = [  # kept from before the weather agent existed; now just more weather questions
     ([], "Do I need an umbrella in Istanbul?", "weather"),
     ([], "Yarın hava nasıl olacak?", "weather"),
     ([], "Who leads La Liga?", "football"),
@@ -75,7 +77,8 @@ THIRD = [
 
 
 def build(llm, config):
-    return main_assistant(llm, config, FakeClient(), lambda: INDEX)
+    # [] = a weather agent with no tools: enough to test where messages go.
+    return main_assistant(llm, config, FakeClient(), lambda: INDEX, weather_tools=[])
 
 
 async def section(title, assistant, cases, repeats):
@@ -102,9 +105,15 @@ CHATS = [
      lambda t: "Luton" in t),
     ("general agent works after football", ["Who coaches Arsenal?", "What is 17 * 23?"],
      lambda t: "391" in t),
+    ("English after Turkish, no tool", ["Merhaba!", "Thanks, and what is 2 + 2?"],
+     lambda t: not re.search(r"[ğışİĞŞ]", t)),
+    ("English after Turkish weather", ["Yarın İstanbul'da yağmur yağacak mı?",
+                                        "Do I need an umbrella there tomorrow?"],
+     lambda t: not re.search(r"[ğışİĞŞ]", t)),
+    ("English time after Turkish", ["Saat kaç?", "What time is it in Tokyo?"],
+     lambda t: not re.search(r"[ğışİĞŞ]", t)),
     ("time question after football goes to the time tools",
      ["Who coaches Arsenal?", "What time is it in Tokyo?"], lambda t: bool(re.search(r"\d{1,2}:\d\d", t))),
-    ("no invented weather", ["What's the weather in Istanbul now?"], lambda t: "°" not in t),
     ("no football from memory", ["hello", "Who won the 2022 World Cup?"],
      lambda t: "Argentina" not in t),
 ]
@@ -135,11 +144,7 @@ async def main(repeats):
     assistant = build(llm, config)
     await section("Tuning questions", assistant, TUNING, repeats)
     await section("Held-out questions", assistant, HELD_OUT, repeats)
-    extra = Agent(llm, Registry(), Conversation("", 1000))
-    extra.chat.turns = assistant.chat.turns
-    assistant.specialists["weather"] = Specialist(
-        "weather", "weather: temperature, rain, wind, forecasts", extra)
-    await section("With a pretend weather agent", assistant, THIRD, repeats)
+    await section("Weather", assistant, THIRD, repeats)
     await chats(llm, config, repeats)
 
 

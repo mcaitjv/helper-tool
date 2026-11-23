@@ -46,8 +46,8 @@ class Agent:
         self.registry = registry
         self.chat = chat
         self.max_rounds = max_rounds
-        # Added after the newest tool results, the last thing the model reads before
-        # answering. Made from the user's question. Not kept in history.
+        # Added to the last message the model reads before answering: the newest tool
+        # result, or the question if there is none. Made from the question; not kept.
         self.reminder = reminder
 
     async def run(self, question: str, think: bool = False) -> AsyncIterator[Event]:
@@ -104,8 +104,9 @@ class Agent:
     def _reminded(self, turn: list[dict], question: str) -> list[dict]:
         last = turn[-1]
         note = self.reminder(question)
-        if not note or last["role"] != "tool":
+        if not note or last["role"] not in ("tool", "user"):
             return turn
+        # After a tool result, or on the question itself when no tool was called yet.
         return [*turn[:-1], {**last, "content": f"{last['content']}\n\n{note}"}]
 
     def _save(self, turn: list[dict]) -> None:
