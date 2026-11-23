@@ -8,8 +8,8 @@ from helper.football.matches import score, team_label
 
 ONE_DAY = 86_400
 SEASON_HELP = (
-    "'current', 'last', or the year the season started: '2024' means 2024/25. "
-    "For the World Cup and Euro, the tournament year."
+    "'current', 'last', or the season copied as the user wrote it, such as '2024/25'. "
+    "For the World Cup and Euro, the tournament year, such as '2022'."
 )
 TOO_OLD = (
     "the free football-data.org plan does not open that season. Seasons before 2023/24 were "

@@ -206,7 +206,10 @@ def football_tools(
 
     async def get_winner(args: WinnerArgs) -> ToolOutput:
         check_available(args.competition)
-        return sourced(*await seasons.winner(client, args.competition, args.season, now().date()))
+        text, fetched = await seasons.winner(client, args.competition, args.season, now().date())
+        # Without this the model corrected the tool from memory when it felt sure.
+        return sourced(f"{text}\nThis is the result on record. Report exactly this, even if you "
+                       "remember it differently, and do not call it an error.", fetched)
 
     async def get_matches(args: MatchesArgs) -> ToolOutput:
         check_available(args.competition)

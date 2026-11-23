@@ -112,3 +112,14 @@ First time on another machine: `python3 -m venv .venv`, activate it,
 - **Known limits:** one agent per message. A question needing two live-data agents will need
   more work once there is a second API. After `/clear`, "and who is third?" makes the model
   assume the Premier League instead of asking.
+
+### Past seasons
+- **An agent can only do what its tools allow.** It said the API had no past seasons, but our
+  tools had no season option and the prompt forbade history. Check claims against the API.
+- Free plan, tested 22 November 2026: tables, scorers and matches from 2023/24 on. Winners go
+  back further but have gaps, so recent ones are worked out from the final table or final match.
+- Goal scorers and times of a match, line-ups and awards are not available.
+- **The model overrode the tool from memory** when it felt sure (famous winners). One sentence in
+  the `get_winner` result fixed most of it.
+- **Let code convert, not the model:** for "2022/23" it sometimes sent 2023. Now it copies the
+  text and `parse_year` reads it.
