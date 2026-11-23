@@ -130,7 +130,7 @@ CHOICES: list[tuple[str, str | None, dict]] = [
      {"competition": "BL1", "season": "last"}),
     ("How did Arsenal do against Chelsea in 2024/25?", "get_team_matches",
      {"team": "Arsenal", "opponent": "Chelsea"}),
-    ("What time is it in Tokyo?", "get_current_time", {"timezone": "Asia/Tokyo"}),
+    ("What time is it in Tokyo?", None, {}),   # not football: time is the general agent's job
     ("hello", None, {}),
     ("Thanks, that's all!", None, {}),
     ("Who leads the Turkish Super Lig?", "UNLISTED", {}),

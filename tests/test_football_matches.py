@@ -102,7 +102,8 @@ def test_extra_time_and_missing_scores():
 
 
 @pytest.mark.parametrize("m, expected", [
-    (match("2026-11-21T17:30:00Z"), "Sat 21 Nov 2026 20:30 | PL | Home 1-0 Away | finished"),
+    (match("2026-11-21T17:30:00Z"),
+     "Sat 21 Nov 2026 20:30 Europe/Istanbul time | PL | Home 1-0 Away | finished"),
     (match("2026-11-24T20:00:00Z", "TIMED", None, None), "Home vs Away | not started"),
     (match("2026-11-22T09:00:00Z", "TIMED", None, None), "should have started, no result yet"),
     (match("2026-11-22T11:30:00Z", "IN_PLAY"), "Home 1-0 Away | in progress, score may be delayed"),

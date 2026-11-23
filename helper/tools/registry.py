@@ -23,6 +23,10 @@ class ToolError(Exception):
     """An expected failure. Its text is shown to the model, so no secrets."""
 
 
+class InvalidArguments(ToolError):
+    """The model sent arguments that don't fit the schema."""
+
+
 @dataclass(frozen=True)
 class ToolOutput:
     """What a tool returns: text for the model, and a source line for the user."""
@@ -36,6 +40,16 @@ class Tool:
     description: str
     args: type[ToolArgs]
     run: Callable[[ToolArgs], Awaitable[str | ToolOutput]]
+    source = "built in"
+
+    async def invoke(self, arguments: dict) -> str | ToolOutput:
+        try:
+            args = self.args.model_validate(arguments)
+        except ValidationError as e:
+            raise InvalidArguments("; ".join(
+                f"{'.'.join(map(str, p['loc'])) or 'arguments'}: {p['msg']}" for p in e.errors()
+            )) from None
+        return await self.run(args)
 
     def schema(self) -> dict:
         """The JSON the model sees."""
@@ -62,12 +76,17 @@ class ToolResult:
 
 
 class Registry:
-    def __init__(self, *tools: Tool):
-        self._tools: dict[str, Tool] = {}
+    """Our own tools and MCP tools, behind one interface: schema() and invoke()."""
+
+    def __init__(self, *tools):
+        self._tools = {}
         for tool in tools:
             self.add(tool)
 
-    def add(self, tool: Tool) -> None:
+    def __iter__(self):
+        return iter(self._tools.values())
+
+    def add(self, tool) -> None:
         if tool.name in self._tools:
             raise ValueError(f"Tool '{tool.name}' is already registered")
         self._tools[tool.name] = tool
@@ -82,14 +101,9 @@ class Registry:
             known = ", ".join(self._tools) or "none"
             return ToolResult(False, f"Error: no tool named '{name}'. Available: {known}")
         try:
-            args = tool.args.model_validate(arguments)
-        except ValidationError as e:
-            problems = "; ".join(
-                f"{'.'.join(map(str, p['loc'])) or 'arguments'}: {p['msg']}" for p in e.errors()
-            )
-            return ToolResult(False, f"Error: invalid arguments. {problems}")
-        try:
-            output = await tool.run(args)
+            output = await tool.invoke(arguments)
+        except InvalidArguments as e:
+            return ToolResult(False, f"Error: invalid arguments. {e}")
         except ToolError as e:
             return ToolResult(False, f"Error: {e}")
         except Exception:

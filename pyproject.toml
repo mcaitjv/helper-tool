@@ -13,6 +13,10 @@ dependencies = [
     "pydantic>=2",
     "python-dotenv",
     "rich",
+    # MCP: pinned, because a server runs on this computer with your permissions.
+    "mcp==2.3.0",
+    "mcp-server-time==2026.11.4",
+    "jsonschema",
 ]
 
 [project.optional-dependencies]

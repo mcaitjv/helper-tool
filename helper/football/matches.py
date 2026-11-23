@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 
+from tzlocal import get_localzone_name
+
 from helper.football.client import FootballError
 
 MAX_ROWS = 40
@@ -97,10 +99,20 @@ def team_label(team: dict | None) -> str:
     return team.get("shortName") or team.get("name") or "to be decided"
 
 
+def zone_name() -> str:
+    """'Europe/Istanbul'. Named in every time we show: "local time" alone made the model
+    think a kick-off was London time and convert it wrongly."""
+    try:
+        return get_localzone_name() or "UTC"
+    except Exception:  # unusual setups; fall back to the offset
+        return datetime.now().astimezone().strftime("UTC%z")
+
+
 def match_line(match: dict, now: datetime) -> str:
     status, result = match.get("status"), score(match)
     when = f"{local_day(match):%a %d %b %Y}"
-    when += " time not set" if status == "SCHEDULED" else f" {utc_time(match).astimezone():%H:%M}"
+    when += (" time not set" if status == "SCHEDULED"
+             else f" {utc_time(match).astimezone():%H:%M} {zone_name()} time")
     if status in DONE:
         state = "finished" if status == "FINISHED" else "result awarded"
         middle = result or "score n/a"

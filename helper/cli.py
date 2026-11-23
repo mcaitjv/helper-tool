@@ -19,8 +19,12 @@ from helper.config import load_config
 from helper.football.client import FootballClient, FootballError
 from helper.football.teams import TeamIndex, build_index, load_index
 from helper.llm import LLM, LLMError
+from helper.mcp_client import McpServers
+from helper.tools.time_adapter import adapt_time_tools
+from helper.mcp_client import load_config as load_mcp_config
 
-HELP = "/think switch thinking on or off · /clear forget this chat · /quit leave"
+HELP = ("/think switch thinking on or off · /tools list tools · /clear forget this chat · "
+        "/quit leave")
 
 
 async def show(agent: Agent | Assistant, question: str, think: bool, out: Console) -> None:
@@ -67,6 +71,33 @@ def prepare_teams(client: FootballClient, runner: asyncio.Runner, out: Console) 
     return index  # an old list is better than none
 
 
+def start_mcp(runner: asyncio.Runner, out: Console) -> McpServers:
+    """Start the MCP servers in mcp.json. Problems are shown, never fatal."""
+    try:
+        servers = McpServers(load_mcp_config())
+    except ValueError as e:
+        out.print(str(e), style="red", markup=False)
+        return McpServers([])
+    runner.run(servers.start())
+    for problem in servers.problems:
+        out.print(f"{problem} (using the built-in clock instead)", style="red", markup=False)
+    for server in servers.servers:
+        names = [t.name for t in servers.tools if t.server is server]
+        if names:
+            out.print(f"[dim]MCP {server.config.name}: {', '.join(names)}[/]")
+    return servers
+
+
+def list_tools(agent, out: Console) -> None:
+    agents = getattr(agent, "specialists", None)
+    pairs = [(s.name, s.agent.registry) for s in agents.values()] if agents else [
+        ("agent", agent.registry)]
+    for name, registry in pairs:
+        out.print(f"[bold]{name}[/]")
+        for tool in registry:
+            out.print(f"  {tool.name}  [dim]({tool.source})[/]")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m helper.cli")
     parser.add_argument("agent", nargs="?", choices=["main", "football", "general"],
@@ -81,15 +112,18 @@ def main() -> None:
 
     # Input stays outside the async part so Ctrl-C works at the prompt.
     with asyncio.Runner() as runner:
+        mcp = start_mcp(runner, out)
+        time_tools = adapt_time_tools([t for t in mcp.tools if t.server.config.name == "time"])
+        time_tools = time_tools or None
         if which == "general":
-            agent = general_agent(llm, config)
+            agent = general_agent(llm, config, time_tools)
         else:
             client = FootballClient(config.football_key)
             teams = prepare_teams(client, runner, out)
             if which == "football":
                 agent = football_agent(llm, config, football_registry(client, lambda: teams))
             else:
-                agent = main_assistant(llm, config, client, lambda: teams)
+                agent = main_assistant(llm, config, client, lambda: teams, time_tools)
         while True:
             try:
                 line = out.input("\n[bold cyan]you>[/] ").strip()
@@ -102,6 +136,9 @@ def main() -> None:
             if line == "/think":
                 think = not think
                 out.print(f"[dim]thinking {'on' if think else 'off'}[/]")
+                continue
+            if line == "/tools":
+                list_tools(agent, out)
                 continue
             if line == "/clear":
                 agent.chat.clear()
@@ -117,6 +154,7 @@ def main() -> None:
                 out.print(str(e), style="red", markup=False)
             except KeyboardInterrupt:
                 out.print("\n[dim]stopped[/]")
+        runner.run(mcp.stop())
     out.print("[dim]bye[/]")
 
 

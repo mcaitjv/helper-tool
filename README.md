@@ -12,6 +12,7 @@ python -m helper.cli football                   # only the football agent
 python -m helper.cli general                    # only the plain helper
 python -m evals.football                        # football question set (needs Ollama)
 python -m evals.routing                         # router question set (needs Ollama)
+python -m evals.time                            # MCP time tools question set
 python -m helper.football.teams                 # rebuild the team list
 python -m pytest                                # tests
 ```
@@ -123,3 +124,28 @@ First time on another machine: `python3 -m venv .venv`, activate it,
   the `get_winner` result fixed most of it.
 - **Let code convert, not the model:** for "2022/23" it sometimes sent 2023. Now it copies the
   text and `parse_year` reads it.
+
+### Step 9: MCP (`mcp_client.py`, `mcp.json`)
+- **MCP** is a standard way for a program (a *server*) to offer tools to any AI app (a
+  *client*). Our app is the client; the official time server gives `get_current_time`,
+  `convert_time` and `get_time_ago`.
+- **How it talks:** we start the server as a separate program and exchange JSON messages over
+  its stdin/stdout: `initialize`, then `tools/list`, then `tools/call` when the model asks.
+- **`mcp.json`** lists servers in the same shape other MCP apps use. Add a server there.
+- **One registry for both:** MCP tools have `schema()` and `invoke()` like ours, so the agents,
+  the loop and the router did not change. `/tools` shows where each tool comes from.
+- **Each agent gets only its own tools:** football has football tools, general has the time
+  tools. Fewer tools per agent = fewer wrong choices. The cost: one message can't use both.
+- **If a server fails, the app keeps working** and falls back to our built-in clock.
+- **Safety:**
+  - A server runs with your permissions: read its code, pin its version (`pyproject.toml`).
+    We chose a release that had been out for over two weeks.
+  - Its tool descriptions go into the model's prompt, so only use servers you trust.
+  - Servers get only a few safe environment variables (HOME, PATH...), not our API key.
+    Never put keys in `mcp.json`'s `env` unless that server needs them.
+  - We check the model's arguments against the server's schema before sending.
+- **Testing found an old bug:** football times said "local time", and the model took them as
+  London time when converting. Each time now names its zone (`Europe/Istanbul`).
+- **Adapting a server's output:** the time server's `convert_time` takes no date and always
+  answers with today's, so "the match tomorrow at 23:00" came back dated today. Telling the
+  model failed 3/3; `tools/time_adapter.py` rewrites the result ("on the next day", no dates).

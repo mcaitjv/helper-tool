@@ -3,6 +3,7 @@
 Run:  python -m evals.routing [repeats]
 """
 import asyncio
+import re
 import sys
 
 from evals.football import INDEX, FakeClient
@@ -101,6 +102,8 @@ CHATS = [
      lambda t: "Luton" in t),
     ("general agent works after football", ["Who coaches Arsenal?", "What is 17 * 23?"],
      lambda t: "391" in t),
+    ("time question after football goes to the time tools",
+     ["Who coaches Arsenal?", "What time is it in Tokyo?"], lambda t: bool(re.search(r"\d{1,2}:\d\d", t))),
     ("no invented weather", ["What's the weather in Istanbul now?"], lambda t: "°" not in t),
     ("no football from memory", ["hello", "Who won the 2022 World Cup?"],
      lambda t: "Argentina" not in t),

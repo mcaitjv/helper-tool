@@ -222,7 +222,7 @@ def football_tools(
         found = [x for x in fetched.data.get("matches") or []
                  if days.first <= m.local_day(x) <= days.last]
         where = "All available competitions" if everything else COMPETITIONS[args.competition]
-        lines = [f"{where}, {days}: {len(found)} matches (local time)"]
+        lines = [f"{where}, {days}: {len(found)} matches (times are {m.zone_name()})"]
         return sourced("\n".join([*lines, *m.match_lines(found, now())]), fetched)
 
     async def team_matches(args: TeamMatchesArgs) -> ToolOutput:
@@ -242,7 +242,7 @@ def football_tools(
         found = against(found, args.opponent)
         found = found[:args.limit] if upcoming else found[-args.limit:]
         lines = [f"{team.name}, {args.which} matches within {TEAM_WINDOW.days} days: {len(found)} "
-                 "shown (local time, oldest first)"]
+                 f"shown (times are {m.zone_name()}, oldest first)"]
         lines += m.match_lines(found, current)
         covered = ", ".join(COMPETITIONS[c] for c in team.competitions)
         if LEAGUES.isdisjoint(team.competitions):

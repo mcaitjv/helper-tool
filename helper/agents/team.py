@@ -13,19 +13,21 @@ from helper.football.teams import TeamIndex
 
 FOOTBALL = ("anything about football (soccer): matches, results, fixtures, league tables, "
             "scorers, clubs, players, coaches, competitions, also past winners and awards")
-GENERAL = ("everything else: greetings, thanks, time and date, writing, explanations, maths, "
+GENERAL = ("everything else: greetings, thanks, time, date and time zones, writing, explanations, maths, "
            "other sports, weather, general questions")
 
 
 def main_assistant(
-    llm, config: Config, client: FootballClient, teams: Callable[[], TeamIndex | None]
+    llm, config: Config, client: FootballClient, teams: Callable[[], TeamIndex | None],
+    time_tools: list | None = None,
 ) -> Assistant:
+    """time_tools go to the general agent only; football keeps its own tools."""
     return Assistant(
         llm,
         [
             Specialist("football", FOOTBALL,
                        football_agent(llm, config, football_registry(client, teams))),
-            Specialist("general", GENERAL, general_agent(llm, config)),
+            Specialist("general", GENERAL, general_agent(llm, config, time_tools)),
         ],
         fallback="general",
     )
